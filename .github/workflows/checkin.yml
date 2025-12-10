@@ -41,6 +41,7 @@ jobs:
 
   keep-action:
     runs-on: ubuntu-latest
+    needs: checkin
     
     steps:
      - name: Checkout code
@@ -58,6 +59,7 @@ jobs:
 
   delete-old-run:
     runs-on: ubuntu-latest
+    needs: keep-action
     
     steps:
      - name: Checkout code
