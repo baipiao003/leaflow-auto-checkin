@@ -270,7 +270,7 @@ class LeaflowAutoCheckin:
             logger.warning(f"获取余额时出错: {e}")
             return "未知"
     
-    def wait_for_checkin_page_loaded(self, max_retries=3, wait_time=20):
+    def wait_for_checkin_page_loaded(self, max_retries=3, wait_time=30):
         """等待签到页面完全加载，支持重试"""
         for attempt in range(max_retries):
             logger.info(f"等待签到页面加载，尝试 {attempt + 1}/{max_retries}，等待 {wait_time} 秒...")
@@ -372,8 +372,8 @@ class LeaflowAutoCheckin:
         # 跳转到签到页面
         self.driver.get("https://checkin.leaflow.net")
         
-        # 等待签到页面加载（最多重试3次，每次等待20秒）
-        if not self.wait_for_checkin_page_loaded(max_retries=3, wait_time=20):
+        # 等待签到页面加载（最多重试3次，每次等待30秒）
+        if not self.wait_for_checkin_page_loaded(max_retries=3, wait_time=30):
             raise Exception("签到页面加载失败，无法找到签到相关元素")
         
         # 查找并点击立即签到按钮
