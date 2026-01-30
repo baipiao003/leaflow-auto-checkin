@@ -24,9 +24,9 @@ jobs:
         pip install -r requirements.txt
     
     - name: Install Chrome
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y google-chrome-stable
+      uses: browser-actions/setup-chrome@v2.1.0
+      with:
+        chrome-version: 144.0.7559.109
     
     - name: Run auto checkin
       env:
