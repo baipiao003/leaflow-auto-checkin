@@ -26,7 +26,7 @@ jobs:
     - name: Install Chrome
       uses: browser-actions/setup-chrome@v2.1.0
       with:
-        chrome-version: 144.0.7559.96
+        chrome-version: 144.0.7559.59
     
     - name: Run auto checkin
       env:
