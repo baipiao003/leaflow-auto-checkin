@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 import requests
 from datetime import datetime
 
@@ -46,14 +46,28 @@ class LeaflowAutoCheckin:
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('--disable-software-rasterizer')
         
         # 通用配置
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
+        # 页面加载优化
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-accelerated-2d-canvas')
+        chrome_options.add_argument('--no-first-run')
+        chrome_options.add_argument('--no-zygote')
+        
         # 添加用户代理，模拟真实浏览器
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        
+        # 设置页面加载策略为normal，避免timeout问题
+        chrome_options.page_load_strategy = 'normal'
+        
+        # 添加性能优化参数
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
         
         self.driver = webdriver.Chrome(options=chrome_options)
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -172,8 +186,6 @@ class LeaflowAutoCheckin:
                         continue
             
             if not email_input:
-                # 截图用于调试
-                self.driver.save_screenshot("debug_email_input.png")
                 raise Exception("找不到邮箱输入框")
             
             # 清除并输入邮箱
@@ -282,8 +294,6 @@ class LeaflowAutoCheckin:
             login_selectors = [
                 "button[type='submit']",
                 "input[type='submit']",
-                "button:contains('登录')",
-                "button:contains('Login')",
                 "//button[contains(text(), '登录')]",
                 "//button[contains(text(), 'Login')]",
                 "//button[@type='submit']",
@@ -297,10 +307,6 @@ class LeaflowAutoCheckin:
                 try:
                     if selector.startswith("//"):
                         elements = self.driver.find_elements(By.XPATH, selector)
-                    elif selector.startswith("button:contains") or selector.startswith("input:contains"):
-                        # 处理jQuery风格的选择器
-                        text = selector.split("'")[1]
-                        elements = self.driver.find_elements(By.XPATH, f"//button[contains(text(), '{text}')] | //input[contains(@value, '{text}')]")
                     else:
                         elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
                     
@@ -476,33 +482,29 @@ class LeaflowAutoCheckin:
             time.sleep(wait_time)
             
             try:
-                # 检查页面是否包含签到相关元素
+                # 根据你提供的签到页面特征进行检查
                 checkin_indicators = [
-                    "button.checkin-btn",  # 优先使用这个选择器
-                    "//button[contains(text(), '立即签到')]",
-                    "//button[contains(text(), '已签到')]",
+                    "//a[contains(@class, 'navbar-brand') and contains(., '每日签到')]",
+                    "//h1[contains(@class, 'page-header') and contains(., '每日签到')]",
+                    "//i[contains(@class, 'bi-calendar-check')]",
                     "//*[contains(text(), '每日签到')]",
-                    "//*[contains(text(), '签到')]"
+                    "//button[contains(text(), '立即签到')]",
+                    "//button[contains(text(), '已签到')]"
                 ]
                 
                 for indicator in checkin_indicators:
                     try:
-                        if indicator.startswith("//"):
-                            element = WebDriverWait(self.driver, 10).until(
-                                EC.presence_of_element_located((By.XPATH, indicator))
-                            )
-                        else:
-                            element = WebDriverWait(self.driver, 10).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, indicator))
-                            )
+                        element = WebDriverWait(self.driver, 10).until(
+                            EC.presence_of_element_located((By.XPATH, indicator))
+                        )
                         
                         if element.is_displayed():
-                            logger.info(f"找到签到页面元素")
+                            logger.info(f"找到签到页面元素: {indicator}")
                             return True
                     except:
                         continue
                 
-                logger.warning(f"第 {attempt + 1} 次尝试未找到签到按钮，继续等待...")
+                logger.warning(f"第 {attempt + 1} 次尝试未找到签到页面特征，继续等待...")
                 
             except Exception as e:
                 logger.warning(f"第 {attempt + 1} 次检查签到页面时出错: {e}")
@@ -517,25 +519,22 @@ class LeaflowAutoCheckin:
             # 先等待页面可能的重载
             time.sleep(5)
             
-            # 使用和单账号成功时相同的选择器
+            # 尝试多种选择器找到签到按钮
             checkin_selectors = [
-                "button.checkin-btn",
                 "//button[contains(text(), '立即签到')]",
-                "//button[contains(@class, 'checkin')]",
-                "button[type='submit']",
-                "button[name='checkin']"
+                "//button[contains(text(), '签到')]",
+                "//input[@value='签到']",
+                "//button[@type='submit']",
+                "//button[contains(@class, 'btn-success')]",
+                "//button[contains(@class, 'btn-primary')]",
+                "//a[contains(@class, 'btn') and contains(text(), '签到')]"
             ]
             
             for selector in checkin_selectors:
                 try:
-                    if selector.startswith("//"):
-                        checkin_btn = WebDriverWait(self.driver, 15).until(
-                            EC.presence_of_element_located((By.XPATH, selector))
-                        )
-                    else:
-                        checkin_btn = WebDriverWait(self.driver, 15).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                        )
+                    checkin_btn = WebDriverWait(self.driver, 15).until(
+                        EC.presence_of_element_located((By.XPATH, selector))
+                    )
                     
                     if checkin_btn.is_displayed():
                         # 检查按钮文本，如果包含"已签到"则说明今天已经签到过了
@@ -546,16 +545,17 @@ class LeaflowAutoCheckin:
                         
                         # 检查按钮是否可用
                         if checkin_btn.is_enabled():
-                            logger.info(f"找到并点击立即签到按钮")
+                            logger.info(f"找到并点击立即签到按钮: {btn_text}")
                             # 使用JavaScript点击确保可靠性
                             self.driver.execute_script("arguments[0].click();", checkin_btn)
+                            time.sleep(2)
                             return True
                         else:
                             logger.info("签到按钮不可用，可能已经签到过了")
                             return "already_checked_in"
                         
                 except Exception as e:
-                    logger.debug(f"选择器未找到按钮: {e}")
+                    logger.debug(f"选择器未找到按钮: {selector} - {e}")
                     continue
             
             logger.error("找不到签到按钮")
@@ -569,11 +569,39 @@ class LeaflowAutoCheckin:
         """执行签到流程"""
         logger.info("跳转到签到页面...")
         
-        # 跳转到签到页面
-        self.driver.get("https://checkin.leaflow.net")
+        try:
+            # 使用正确的签到页面地址
+            checkin_url = "https://checkin.leaflow.net/"
+            logger.info(f"访问签到页面: {checkin_url}")
+            
+            # 设置页面加载超时为60秒
+            self.driver.set_page_load_timeout(60)
+            
+            # 跳转到签到页面
+            self.driver.get(checkin_url)
+            
+        except TimeoutException:
+            logger.warning("页面加载超时，但可能已部分加载，继续执行...")
+        except Exception as e:
+            logger.error(f"访问签到页面失败: {e}")
+            raise Exception(f"无法访问签到页面: {e}")
         
-        # 等待签到页面加载（最多重试3次，每次等待20秒）
-        if not self.wait_for_checkin_page_loaded(max_retries=3, wait_time=20):
+        # 等待签到页面加载（最多重试3次，每次等待15秒）
+        if not self.wait_for_checkin_page_loaded(max_retries=3, wait_time=15):
+            # 尝试截屏查看当前页面状态
+            try:
+                self.driver.save_screenshot("checkin_page_debug.png")
+                logger.info("已保存签到页面截图供调试")
+            except:
+                pass
+            
+            # 检查当前页面内容
+            try:
+                page_source = self.driver.page_source[:1000]  # 获取前1000个字符
+                logger.info(f"当前页面内容片段: {page_source}")
+            except:
+                pass
+            
             raise Exception("签到页面加载失败，无法找到签到相关元素")
         
         # 查找并点击立即签到按钮
@@ -635,9 +663,10 @@ class LeaflowAutoCheckin:
             
             # 检查签到按钮状态变化
             try:
-                checkin_btn = self.driver.find_element(By.CSS_SELECTOR, "button.checkin-btn")
-                if not checkin_btn.is_enabled() or "已签到" in checkin_btn.text or "disabled" in checkin_btn.get_attribute("class"):
-                    return "今日已签到完成"
+                checkin_btns = self.driver.find_elements(By.XPATH, "//button[contains(text(), '签到')]")
+                for checkin_btn in checkin_btns:
+                    if not checkin_btn.is_enabled() or "已签到" in checkin_btn.text:
+                        return "今日已签到完成"
             except:
                 pass
             
@@ -671,7 +700,10 @@ class LeaflowAutoCheckin:
         
         finally:
             if self.driver:
-                self.driver.quit()
+                try:
+                    self.driver.quit()
+                except:
+                    pass
 
 class MultiAccountManager:
     """多账号管理器 - 简化配置版本"""
@@ -748,12 +780,12 @@ class MultiAccountManager:
             return
         
         try:
-            # 构建通知消息
+            # 构建通知消息 - 避免HTML实体解析错误
             success_count = sum(1 for _, success, _, _ in results if success)
             total_count = len(results)
             current_date = datetime.now().strftime("%Y/%m/%d")
             
-            message = f"🎁 Leaflow自动签到通知\n"
+            message = "🎁 Leaflow自动签到通知\n"
             message += f"📊 成功: {success_count}/{total_count}\n"
             message += f"📅 签到时间：{current_date}\n\n"
             
@@ -775,7 +807,7 @@ class MultiAccountManager:
             data = {
                 "chat_id": self.telegram_chat_id,
                 "text": message,
-                "parse_mode": "HTML"
+                "parse_mode": "Markdown"  # 使用Markdown而不是HTML
             }
             
             response = requests.post(url, data=data, timeout=10)
