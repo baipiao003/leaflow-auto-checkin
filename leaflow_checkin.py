@@ -201,16 +201,12 @@ class LeaflowAutoCheckin:
         try:
             logger.info("等待登录完成...")
             
-            # 方法1：等待URL变化，不限于特定关键词
-            original_url = self.driver.current_url
-            
-            # 等待一段时间让页面处理登录请求
-            time.sleep(5)
+            # 给登录请求一些处理时间
+            time.sleep(3)
             
             # 等待页面跳转或加载完成
             WebDriverWait(self.driver, 15).until(
-                lambda driver: driver.current_url != original_url or 
-                driver.execute_script("return document.readyState") == "complete"
+                lambda driver: driver.execute_script("return document.readyState") == "complete"
             )
             
             # 获取当前URL和页面标题
@@ -218,113 +214,167 @@ class LeaflowAutoCheckin:
             page_title = self.driver.title if self.driver.title else ""
             logger.info(f"当前URL: {current_url}, 页面标题: {page_title}")
             
-            # 检查页面是否包含登录成功后的元素
-            success_indicators = [
-                # URL关键词
-                "dashboard" in current_url.lower(),
-                "workspace" in current_url.lower(),
-                "home" in current_url.lower(),
-                "checkin" in current_url.lower(),
-                # 页面内容关键词
-                "签到" in page_title,
-                "leaflow" in page_title.lower(),
-                # 检查页面是否包含特定元素
-                self.check_login_success_elements()
-            ]
+            # 方法1：检查是否仍然是登录页面
+            if "login" in current_url.lower() and self.is_login_page_still_visible():
+                logger.warning("仍然停留在登录页面，检查是否有错误信息...")
+                
+                # 检查是否有真正的错误信息
+                real_error = self.check_real_login_errors()
+                if real_error:
+                    raise Exception(f"登录失败: {real_error}")
+                else:
+                    # 可能是页面没有跳转，尝试等待更长时间
+                    logger.info("没有检测到错误信息，可能是页面加载缓慢，等待额外时间...")
+                    time.sleep(5)
+                    
+                    # 重新检查URL和页面状态
+                    current_url = self.driver.current_url
+                    if "login" in current_url.lower():
+                        raise Exception("登录后仍然停留在登录页面，但未检测到具体错误")
+                    else:
+                        logger.info(f"页面已跳转: {current_url}")
             
-            # 检查错误信息
-            error_found = self.check_login_errors()
-            if error_found:
-                raise Exception(f"登录失败: {error_found}")
-            
-            # 如果任何成功指标为真，则认为登录成功
-            if any(success_indicators):
-                logger.info(f"登录成功")
+            # 方法2：检查是否已经成功登录
+            if self.is_logged_in_successfully():
+                logger.info("登录成功")
                 return True
             else:
-                # 保存截图用于调试
-                try:
-                    screenshot_path = f"login_debug_{int(time.time())}.png"
-                    self.driver.save_screenshot(screenshot_path)
-                    logger.info(f"保存登录页面截图: {screenshot_path}")
-                except:
-                    pass
-                
-                raise Exception("登录后未检测到成功指标")
+                raise Exception("无法确认登录状态")
                 
         except TimeoutException as e:
             # 检查页面是否已经加载完成
             try:
-                current_url = self.driver.current_url
-                page_source = self.driver.page_source
-                
-                # 检查是否已经跳转到非登录页面
-                if "login" not in current_url.lower() and current_url != "https://leaflow.net/login":
-                    logger.info(f"已跳转到非登录页面: {current_url}")
+                if self.is_logged_in_successfully():
+                    logger.info("登录成功（超时后检测）")
                     return True
-                
-                # 检查页面是否有错误信息
-                error_msg = self.check_login_errors()
-                if error_msg:
-                    raise Exception(f"登录失败: {error_msg}")
-                
-                raise Exception("登录超时，但未找到具体错误信息")
+                else:
+                    raise Exception("登录超时，且无法确认登录状态")
             except Exception as inner_e:
                 raise inner_e
     
-    def check_login_success_elements(self):
-        """检查登录成功后的元素"""
-        success_elements = [
-            "//*[contains(text(), '欢迎')]",
-            "//*[contains(text(), 'Welcome')]",
-            "//*[contains(text(), '仪表板')]",
-            "//*[contains(text(), 'Dashboard')]",
-            "//*[contains(text(), '签到')]",
-            "//*[contains(@class, 'user-info')]",
-            "//*[contains(@class, 'avatar')]",
-            "//*[contains(@class, 'menu')]"
+    def is_login_page_still_visible(self):
+        """检查是否仍然是登录页面"""
+        login_page_indicators = [
+            "input[type='password']",  # 密码框
+            "//button[contains(text(), '登录')]",  # 登录按钮
+            "//*[contains(text(), '忘记密码')]",  # 忘记密码链接
         ]
         
-        for element_xpath in success_elements:
+        for indicator in login_page_indicators:
             try:
-                elements = self.driver.find_elements(By.XPATH, element_xpath)
-                for element in elements:
-                    if element.is_displayed():
-                        logger.info(f"找到登录成功元素: {element.text[:50]}")
-                        return True
+                if indicator.startswith("//"):
+                    element = self.driver.find_element(By.XPATH, indicator)
+                else:
+                    element = self.driver.find_element(By.CSS_SELECTOR, indicator)
+                
+                if element.is_displayed():
+                    return True
             except:
                 continue
+        
         return False
     
-    def check_login_errors(self):
-        """检查登录错误信息"""
-        error_selectors = [
-            ".error", 
-            ".alert-danger", 
-            ".alert-error",
-            "[class*='error']", 
-            "[class*='danger']",
-            "[class*='fail']",
-            "[class*='invalid']",
-            "//*[contains(text(), '错误')]",
-            "//*[contains(text(), '失败')]",
-            "//*[contains(text(), 'invalid')]",
-            "//*[contains(text(), 'incorrect')]"
+    def is_logged_in_successfully(self):
+        """检查是否成功登录"""
+        # 检查是否已经跳转到非登录页面
+        current_url = self.driver.current_url
+        if "login" not in current_url.lower() and current_url != "https://leaflow.net/login":
+            logger.info(f"已跳转到非登录页面: {current_url}")
+            return True
+        
+        # 检查页面是否包含登录成功后的元素
+        success_indicators = [
+            # 用户相关元素
+            "//*[contains(@class, 'user-avatar')]",
+            "//*[contains(@class, 'user-menu')]",
+            "//*[contains(@class, 'user-info')]",
+            # 仪表板元素
+            "//*[contains(text(), '仪表板')]",
+            "//*[contains(text(), 'Dashboard')]",
+            "//*[contains(text(), '工作区')]",
+            # 签到相关
+            "//*[contains(text(), '签到')]",
+            "//*[contains(@href, 'checkin')]",
+            # 欢迎消息
+            "//*[contains(text(), '欢迎') and not(contains(text(), '欢迎注册'))]",
         ]
         
-        for selector in error_selectors:
+        for indicator in success_indicators:
             try:
-                if selector.startswith("//"):
-                    elements = self.driver.find_elements(By.XPATH, selector)
+                elements = self.driver.find_elements(By.XPATH, indicator)
+                for element in elements:
+                    try:
+                        if element.is_displayed():
+                            element_text = element.text.strip()[:100] if element.text else ""
+                            logger.info(f"找到登录成功元素: {indicator} - {element_text}")
+                            return True
+                    except:
+                        continue
+            except:
+                continue
+        
+        return False
+    
+    def check_real_login_errors(self):
+        """检查真正的登录错误信息，排除导航元素等"""
+        error_indicators = [
+            # 真正的错误消息容器
+            ".alert-danger",
+            ".error-message",
+            ".login-error",
+            ".ant-alert-error",
+            # 包含错误文本的元素
+            "//*[contains(@class, 'error') and contains(text(), '密码')]",
+            "//*[contains(@class, 'error') and contains(text(), '账号')]",
+            "//*[contains(@class, 'error') and contains(text(), '验证')]",
+            # 具体的错误文本
+            "//*[contains(text(), '密码错误')]",
+            "//*[contains(text(), '账号不存在')]",
+            "//*[contains(text(), '验证失败')]",
+            "//*[contains(text(), '登录失败')]",
+        ]
+        
+        # 排除这些可能的误判元素
+        exclude_selectors = [
+            "//*[contains(text(), '登录 / 注册')]",  # 排除导航元素
+            "//*[contains(text(), '登录或注册')]",  # 排除页面标题
+            "nav",  # 导航栏
+            "header",  # 页头
+            "footer",  # 页脚
+        ]
+        
+        for error_indicator in error_indicators:
+            try:
+                if error_indicator.startswith("//"):
+                    elements = self.driver.find_elements(By.XPATH, error_indicator)
                 else:
-                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, error_indicator)
                 
                 for element in elements:
-                    if element.is_displayed():
-                        error_text = element.text.strip()
-                        if error_text and len(error_text) < 200:  # 限制文本长度
-                            logger.warning(f"检测到错误信息: {error_text}")
-                            return error_text
+                    try:
+                        if element.is_displayed():
+                            # 检查是否在排除列表中
+                            should_exclude = False
+                            for exclude_selector in exclude_selectors:
+                                try:
+                                    if exclude_selector.startswith("//"):
+                                        parent_elements = element.find_elements(By.XPATH, f"./ancestor::{exclude_selector[2:]}")
+                                    else:
+                                        parent_elements = element.find_elements(By.XPATH, f"./ancestor::{exclude_selector}")
+                                    
+                                    if parent_elements:
+                                        should_exclude = True
+                                        break
+                                except:
+                                    continue
+                            
+                            if not should_exclude:
+                                error_text = element.text.strip()
+                                if error_text and len(error_text) < 200:
+                                    logger.warning(f"检测到真正的错误信息: {error_text}")
+                                    return error_text
+                    except:
+                        continue
             except:
                 continue
         
