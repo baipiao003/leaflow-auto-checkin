@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 import requests
 from datetime import datetime
 
@@ -64,16 +64,27 @@ class LeaflowAutoCheckin:
             logger.info("尝试关闭初始弹窗...")
             time.sleep(3)  # 等待弹窗加载
             
-            # 尝试关闭弹窗
+            # 尝试多种方式关闭弹窗
+            try:
+                # 方法1: 使用键盘ESC键
+                from selenium.webdriver.common.keys import Keys
+                actions = ActionChains(self.driver)
+                actions.send_keys(Keys.ESCAPE).perform()
+                logger.info("尝试使用ESC键关闭弹窗")
+                time.sleep(2)
+            except:
+                pass
+            
+            # 方法2: 点击页面特定位置
             try:
                 actions = ActionChains(self.driver)
                 actions.move_by_offset(10, 10).click().perform()
-                logger.info("已成功关闭弹窗")
+                logger.info("尝试点击页面关闭弹窗")
                 time.sleep(2)
-                return True
             except:
                 pass
-            return False
+            
+            return True
             
         except Exception as e:
             logger.warning(f"关闭弹窗时出错: {e}")
@@ -91,41 +102,6 @@ class LeaflowAutoCheckin:
             EC.presence_of_element_located((by, value))
         )
     
-    def find_and_click_email_login_tab(self):
-        """找到并点击邮箱登录标签页"""
-        try:
-            logger.info("查找邮箱登录标签...")
-            
-            # 等待页面加载
-            time.sleep(3)
-            
-            # 尝试查找邮箱登录标签
-            email_tab_selectors = [
-                "//button[contains(text(), '邮箱登录')]",
-                "//button[contains(text(), '邮箱')]",
-                "//div[contains(text(), '邮箱登录')]",
-                "//*[contains(@class, 'tab') and contains(text(), '邮箱')]",
-                "//*[contains(@class, 'tab') and contains(text(), 'Email')]",
-            ]
-            
-            for selector in email_tab_selectors:
-                try:
-                    email_tab = self.driver.find_element(By.XPATH, selector)
-                    if email_tab.is_displayed() and email_tab.is_enabled():
-                        logger.info("找到邮箱登录标签，点击...")
-                        email_tab.click()
-                        time.sleep(2)
-                        return True
-                except:
-                    continue
-            
-            logger.info("未找到邮箱登录标签，可能已经是邮箱登录页面")
-            return True
-                    
-        except Exception as e:
-            logger.warning(f"查找邮箱登录标签时出错: {e}")
-            return False
-    
     def login(self):
         """执行登录流程"""
         logger.info(f"开始登录流程")
@@ -137,51 +113,67 @@ class LeaflowAutoCheckin:
         # 关闭弹窗
         self.close_popup()
         
-        # 尝试切换到邮箱登录标签
-        self.find_and_click_email_login_tab()
-        
         # 输入邮箱
         try:
             logger.info("查找邮箱输入框...")
             
             # 等待页面稳定
-            time.sleep(2)
+            time.sleep(3)
             
             # 尝试多种选择器找到邮箱输入框
             email_selectors = [
-                "input[type='email']",
-                "input[type='text'][name='email']", 
-                "input[name='email']",
+                "input[type='text']",
+                "input[type='email']", 
                 "input[placeholder*='邮箱']",
+                "input[placeholder*='邮件']",
                 "input[placeholder*='email']",
-                "//input[contains(@placeholder, '邮箱')]",
-                "//input[contains(@placeholder, 'email')]",
+                "input[placeholder*='Email']",
+                "input[name='email']",
+                "input[name='username']",
+                "input[id*='email']",
+                "input[id*='username']",
+                "#email",
+                "#username"
             ]
             
             email_input = None
             for selector in email_selectors:
                 try:
-                    if selector.startswith("//"):
-                        email_input = self.wait_for_element_clickable(By.XPATH, selector, 5)
-                    else:
-                        email_input = self.wait_for_element_clickable(By.CSS_SELECTOR, selector, 5)
-                    logger.info(f"找到邮箱输入框")
-                    break
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    for element in elements:
+                        if element.is_displayed() and element.is_enabled():
+                            email_input = element
+                            logger.info(f"找到邮箱输入框: {selector}")
+                            break
+                    if email_input:
+                        break
                 except:
                     continue
             
             if not email_input:
-                # 尝试通过JavaScript查找
-                try:
-                    email_input = self.driver.execute_script("""
-                        return document.querySelector('input[type="email"], input[name="email"], input[placeholder*="邮箱"]');
-                    """)
-                    if email_input:
-                        self.driver.execute_script("arguments[0].scrollIntoView();", email_input)
-                except:
-                    pass
+                # 尝试使用XPath
+                xpath_selectors = [
+                    "//input[@type='text']",
+                    "//input[@type='email']",
+                    "//input[contains(@placeholder, '邮箱')]",
+                    "//input[contains(@placeholder, 'email')]"
+                ]
+                for xpath in xpath_selectors:
+                    try:
+                        elements = self.driver.find_elements(By.XPATH, xpath)
+                        for element in elements:
+                            if element.is_displayed() and element.is_enabled():
+                                email_input = element
+                                logger.info(f"通过XPath找到邮箱输入框")
+                                break
+                        if email_input:
+                            break
+                    except:
+                        continue
             
             if not email_input:
+                # 截图用于调试
+                self.driver.save_screenshot("debug_email_input.png")
                 raise Exception("找不到邮箱输入框")
             
             # 清除并输入邮箱
@@ -195,11 +187,12 @@ class LeaflowAutoCheckin:
             # 尝试使用JavaScript直接设置值
             try:
                 self.driver.execute_script(f"""
-                    const emailInput = document.querySelector('input[type="email"], input[name="email"]');
-                    if (emailInput) {{
-                        emailInput.value = '{self.email}';
-                        emailInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        emailInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    var inputs = document.querySelectorAll('input[type="text"], input[type="email"]');
+                    for(var i=0; i<inputs.length; i++) {{
+                        if(inputs[i].offsetWidth > 0 && inputs[i].offsetHeight > 0) {{
+                            inputs[i].value = '{self.email}';
+                            break;
+                        }}
                     }}
                 """)
                 logger.info("通过JavaScript设置邮箱")
@@ -207,29 +200,53 @@ class LeaflowAutoCheckin:
             except:
                 raise Exception(f"无法输入邮箱: {e}")
         
-        # 等待密码输入框出现并输入密码
+        # 输入密码
         try:
             logger.info("查找密码输入框...")
             
-            # 等待密码框出现
             password_selectors = [
                 "input[type='password']",
+                "input[placeholder*='密码']",
+                "input[placeholder*='password']",
+                "input[placeholder*='Password']",
                 "input[name='password']",
-                "//input[@type='password']",
-                "//input[contains(@placeholder, '密码')]",
+                "input[id*='password']",
+                "#password"
             ]
             
             password_input = None
             for selector in password_selectors:
                 try:
-                    if selector.startswith("//"):
-                        password_input = self.wait_for_element_clickable(By.XPATH, selector, 5)
-                    else:
-                        password_input = self.wait_for_element_clickable(By.CSS_SELECTOR, selector, 5)
-                    logger.info("找到密码输入框")
-                    break
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    for element in elements:
+                        if element.is_displayed() and element.is_enabled():
+                            password_input = element
+                            logger.info(f"找到密码输入框: {selector}")
+                            break
+                    if password_input:
+                        break
                 except:
                     continue
+            
+            if not password_input:
+                # 尝试XPath
+                xpath_selectors = [
+                    "//input[@type='password']",
+                    "//input[contains(@placeholder, '密码')]",
+                    "//input[contains(@placeholder, 'password')]"
+                ]
+                for xpath in xpath_selectors:
+                    try:
+                        elements = self.driver.find_elements(By.XPATH, xpath)
+                        for element in elements:
+                            if element.is_displayed() and element.is_enabled():
+                                password_input = element
+                                logger.info("通过XPath找到密码输入框")
+                                break
+                        if password_input:
+                            break
+                    except:
+                        continue
             
             if not password_input:
                 raise Exception("找不到密码输入框")
@@ -239,189 +256,167 @@ class LeaflowAutoCheckin:
             logger.info("密码输入完成")
             time.sleep(1)
             
-        except TimeoutException:
-            raise Exception("找不到密码输入框")
+        except Exception as e:
+            logger.error(f"输入密码时出错: {e}")
+            # 尝试使用JavaScript
+            try:
+                self.driver.execute_script(f"""
+                    var inputs = document.querySelectorAll('input[type="password"]');
+                    for(var i=0; i<inputs.length; i++) {{
+                        if(inputs[i].offsetWidth > 0 && inputs[i].offsetHeight > 0) {{
+                            inputs[i].value = '{self.password}';
+                            break;
+                        }}
+                    }}
+                """)
+                logger.info("通过JavaScript设置密码")
+                time.sleep(2)
+            except:
+                raise Exception(f"无法输入密码: {e}")
         
         # 点击登录按钮
         try:
             logger.info("查找登录按钮...")
-            login_btn_selectors = [
-                "//button[contains(text(), '登录') and not(contains(text(), '注册'))]",
-                "//button[contains(text(), '登 录')]",
-                "//button[@type='submit' and contains(text(), '登录')]",
+            
+            # 尝试多种方式找到登录按钮
+            login_selectors = [
                 "button[type='submit']",
+                "input[type='submit']",
+                "button:contains('登录')",
+                "button:contains('Login')",
+                "//button[contains(text(), '登录')]",
+                "//button[contains(text(), 'Login')]",
                 "//button[@type='submit']",
+                "//input[@type='submit']",
+                "button.btn-primary",
+                "button.btn-login"
             ]
             
             login_btn = None
-            for selector in login_btn_selectors:
+            for selector in login_selectors:
                 try:
                     if selector.startswith("//"):
-                        login_btn = self.wait_for_element_clickable(By.XPATH, selector, 5)
+                        elements = self.driver.find_elements(By.XPATH, selector)
+                    elif selector.startswith("button:contains") or selector.startswith("input:contains"):
+                        # 处理jQuery风格的选择器
+                        text = selector.split("'")[1]
+                        elements = self.driver.find_elements(By.XPATH, f"//button[contains(text(), '{text}')] | //input[contains(@value, '{text}')]")
                     else:
-                        login_btn = self.wait_for_element_clickable(By.CSS_SELECTOR, selector, 5)
-                    logger.info(f"找到登录按钮")
-                    break
+                        elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    
+                    for element in elements:
+                        if element.is_displayed() and element.is_enabled():
+                            login_btn = element
+                            logger.info(f"找到登录按钮: {selector}")
+                            break
+                    if login_btn:
+                        break
                 except:
                     continue
             
             if not login_btn:
                 raise Exception("找不到登录按钮")
             
-            login_btn.click()
+            # 点击登录按钮
+            try:
+                login_btn.click()
+            except:
+                # 如果普通点击失败，尝试使用JavaScript点击
+                self.driver.execute_script("arguments[0].click();", login_btn)
+            
             logger.info("已点击登录按钮")
             
         except Exception as e:
-            raise Exception(f"点击登录按钮失败: {e}")
+            logger.error(f"点击登录按钮失败: {e}")
+            # 尝试通过表单提交
+            try:
+                self.driver.execute_script("document.querySelector('form').submit();")
+                logger.info("通过JavaScript提交表单")
+            except:
+                raise Exception(f"无法提交登录表单: {e}")
         
-        # 等待登录完成 - SPA应用需要特殊处理
+        # 等待登录完成 - 改进的验证逻辑
         try:
             logger.info("等待登录完成...")
             
-            # 等待登录处理
+            # 等待最多30秒，检查多个成功指标
+            WebDriverWait(self.driver, 30).until(
+                lambda driver: any([
+                    "dashboard" in driver.current_url,
+                    "workspaces" in driver.current_url,
+                    "/dashboard" in driver.current_url,
+                    "/workspaces" in driver.current_url,
+                    driver.execute_script("return document.body.innerText;").find("资源使用趋势") != -1,  # 根据你提供的成功页面内容
+                    driver.execute_script("return document.body.innerText;").find("Dashboard") != -1,
+                    driver.execute_script("return document.body.innerText;").find("仪表板") != -1,
+                    "login" not in driver.current_url and "signin" not in driver.current_url
+                ])
+            )
+            
+            # 额外等待页面完全加载
             time.sleep(5)
             
-            # 检查是否有错误信息
-            error_found = self.check_login_errors()
-            if error_found:
-                raise Exception(f"登录失败: {error_found}")
-            
-            # 检查登录成功的迹象
-            if self.is_logged_in_successfully():
-                logger.info("登录成功")
-                return True
-            else:
-                # 等待更长时间再检查
-                time.sleep(5)
-                if self.is_logged_in_successfully():
-                    logger.info("登录成功（额外等待后）")
-                    return True
-                else:
-                    raise Exception("无法确认登录状态")
-                
-        except TimeoutException as e:
-            # 检查页面是否已经加载完成
-            try:
-                if self.is_logged_in_successfully():
-                    logger.info("登录成功（超时后检测）")
-                    return True
-                else:
-                    raise Exception("登录超时，且无法确认登录状态")
-            except Exception as inner_e:
-                raise inner_e
-    
-    def is_logged_in_successfully(self):
-        """检查是否成功登录 - 针对SPA应用"""
-        try:
-            # 方法1：检查用户头像或用户信息元素
-            user_elements = [
-                "//*[contains(@class, 'user-avatar')]",
-                "//*[contains(@class, 'user-menu')]",
-                "//*[contains(@class, 'user-info')]",
-                "//img[contains(@class, 'avatar')]",
-                "//*[contains(@class, 'user-name')]",
-            ]
-            
-            for element in user_elements:
-                try:
-                    if self.driver.find_element(By.XPATH, element).is_displayed():
-                        logger.info(f"找到用户元素: {element}")
-                        return True
-                except:
-                    continue
-            
-            # 方法2：检查是否跳转到dashboard或workspace页面
+            # 检查是否真的登录成功
             current_url = self.driver.current_url
-            dashboard_indicators = [
-                "dashboard" in current_url.lower(),
-                "workspace" in current_url.lower(),
-                "applications" in current_url.lower(),
-                "deployments" in current_url.lower(),
-            ]
+            page_content = self.driver.page_source
             
-            if any(dashboard_indicators):
-                logger.info(f"已跳转到工作台页面: {current_url}")
+            # 根据你提供的成功页面内容进行检查
+            if "资源使用趋势" in page_content or "Dashboard" in page_content or "仪表板" in page_content:
+                logger.info(f"登录成功，检测到成功页面内容")
+                logger.info(f"当前URL: {current_url}")
                 return True
             
-            # 方法3：检查页面标题是否变化
-            page_title = self.driver.title.lower() if self.driver.title else ""
-            if "login" not in page_title and "登录" not in page_title:
-                logger.info(f"页面标题变化: {page_title}")
-                return True
-            
-            # 方法4：检查是否有签到相关元素
-            checkin_elements = [
-                "//*[contains(text(), '签到')]",
-                "//*[contains(@href, 'checkin')]",
-                "//button[contains(text(), '签到')]",
-            ]
-            
-            for element in checkin_elements:
-                try:
-                    if self.driver.find_element(By.XPATH, element).is_displayed():
-                        logger.info(f"找到签到相关元素: {element}")
-                        return True
-                except:
-                    continue
-            
-            # 方法5：检查导航菜单是否变化
-            nav_elements = [
-                "//nav",
-                "//*[contains(@class, 'sidebar')]",
-                "//*[contains(@class, 'navigation')]",
-            ]
-            
-            for element in nav_elements:
-                try:
-                    nav = self.driver.find_element(By.XPATH, element)
-                    nav_text = nav.text.lower() if nav.text else ""
-                    if nav_text and "dashboard" in nav_text or "工作台" in nav_text:
-                        logger.info("找到工作台导航")
-                        return True
-                except:
-                    continue
-            
-            return False
-            
-        except Exception as e:
-            logger.warning(f"检查登录状态时出错: {e}")
-            return False
-    
-    def check_login_errors(self):
-        """检查登录错误信息"""
-        error_selectors = [
-            ".error-message",
-            ".alert-danger",
-            ".text-red-500",
-            ".text-red-600",
-            "//*[contains(@class, 'error') and contains(text(), '密码')]",
-            "//*[contains(@class, 'error') and contains(text(), '邮箱')]",
-            "//*[contains(text(), '密码错误')]",
-            "//*[contains(text(), '邮箱不存在')]",
-            "//*[contains(text(), '验证失败')]",
-            "//*[contains(text(), '登录失败')]",
-        ]
-        
-        for selector in error_selectors:
-            try:
-                if selector.startswith("//"):
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                else:
-                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+            # 检查是否还在登录页面
+            if "login" in current_url or "signin" in current_url:
+                # 检查是否有错误消息
+                error_indicators = [
+                    "error", "Error", "ERROR",
+                    "invalid", "Invalid", "INVALID",
+                    "incorrect", "Incorrect", "INCORRECT",
+                    "失败", "错误", "不正确"
+                ]
                 
-                for element in elements:
-                    try:
-                        if element.is_displayed():
-                            error_text = element.text.strip()
-                            if error_text and len(error_text) < 200:
-                                logger.warning(f"检测到错误信息: {error_text}")
-                                return error_text
-                    except:
-                        continue
-            except:
-                continue
-        
-        return None
+                page_text = self.driver.find_element(By.TAG_NAME, "body").text
+                for indicator in error_indicators:
+                    if indicator in page_text:
+                        # 提取错误信息
+                        lines = page_text.split('\n')
+                        for line in lines:
+                            if indicator in line:
+                                raise Exception(f"登录失败: {line.strip()}")
+                
+                raise Exception("登录后仍然在登录页面，但没有明确的错误信息")
+            
+            # 如果既不是明显的成功也不是失败，也认为是成功
+            logger.info(f"登录可能成功，当前URL: {current_url}")
+            return True
+                
+        except TimeoutException:
+            # 检查是否有错误消息
+            try:
+                error_elements = self.driver.find_elements(By.CSS_SELECTOR, ".error, .alert-danger, .text-red, [class*='error'], [class*='danger']")
+                for element in error_elements:
+                    if element.is_displayed():
+                        error_text = element.text.strip()
+                        if error_text:
+                            raise Exception(f"登录失败: {error_text}")
+                
+                # 检查页面文本中的错误关键词
+                page_text = self.driver.find_element(By.TAG_NAME, "body").text
+                error_keywords = ["error", "Error", "invalid", "Invalid", "incorrect", "Incorrect", "失败", "错误"]
+                for keyword in error_keywords:
+                    if keyword in page_text:
+                        lines = page_text.split('\n')
+                        for line in lines:
+                            if keyword in line:
+                                raise Exception(f"登录失败: {line.strip()}")
+                
+                raise Exception("登录超时，无法确认登录状态")
+            except Exception as e:
+                if "登录失败" in str(e):
+                    raise e
+                else:
+                    raise Exception(f"登录超时: {str(e)}")
     
     def get_balance(self):
         """获取当前账号的总余额"""
@@ -444,7 +439,10 @@ class LeaflowAutoCheckin:
                 "//*[contains(@class, 'money')]",
                 "//*[contains(@class, 'amount')]",
                 "//button[contains(@class, 'dollar')]",
-                "//span[contains(@class, 'font-medium')]"
+                "//span[contains(@class, 'font-medium')]",
+                "//div[contains(@class, 'balance')]",
+                "//div[contains(text(), '¥')]",
+                "//span[contains(text(), '¥')]"
             ]
             
             for selector in balance_selectors:
@@ -453,7 +451,7 @@ class LeaflowAutoCheckin:
                     for element in elements:
                         text = element.text.strip()
                         # 查找包含数字和货币符号的文本
-                        if any(char.isdigit() for char in text) and ('¥' in text or '￥' in text or '元' in text):
+                        if any(char.isdigit() for char in text) and ('¥' in text or '￥' in text or '元' in text or '￥' in text or '$' in text):
                             # 提取数字部分
                             import re
                             numbers = re.findall(r'\d+\.?\d*', text)
@@ -480,7 +478,7 @@ class LeaflowAutoCheckin:
             try:
                 # 检查页面是否包含签到相关元素
                 checkin_indicators = [
-                    "button.checkin-btn",
+                    "button.checkin-btn",  # 优先使用这个选择器
                     "//button[contains(text(), '立即签到')]",
                     "//button[contains(text(), '已签到')]",
                     "//*[contains(text(), '每日签到')]",
@@ -542,14 +540,15 @@ class LeaflowAutoCheckin:
                     if checkin_btn.is_displayed():
                         # 检查按钮文本，如果包含"已签到"则说明今天已经签到过了
                         btn_text = checkin_btn.text.strip()
-                        if "已签到" in btn_text:
+                        if "已签到" in btn_text or "已签" in btn_text or "签到过" in btn_text:
                             logger.info("伙计，今日你已经签到过了！")
                             return "already_checked_in"
                         
                         # 检查按钮是否可用
                         if checkin_btn.is_enabled():
                             logger.info(f"找到并点击立即签到按钮")
-                            checkin_btn.click()
+                            # 使用JavaScript点击确保可靠性
+                            self.driver.execute_script("arguments[0].click();", checkin_btn)
                             return True
                         else:
                             logger.info("签到按钮不可用，可能已经签到过了")
