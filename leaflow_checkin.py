@@ -571,7 +571,7 @@ class LeaflowAutoCheckin:
         
         try:
             # 使用正确的签到页面地址
-            checkin_url = "https://checkin.leaflow.net/"
+            checkin_url = "https://checkin.leaflow.net/index.php"
             logger.info(f"访问签到页面: {checkin_url}")
             
             # 设置页面加载超时为60秒
@@ -872,3 +872,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
