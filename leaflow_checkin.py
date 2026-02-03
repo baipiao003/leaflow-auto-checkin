@@ -271,9 +271,31 @@ class LeaflowAutoCheckin:
             logger.warning(f"获取余额时出错: {e}")
             return "未知"
     
-    def wait_for_checkin_page_loaded(self, max_retries=6, wait_time=20):
-        """等待签到页面完全加载，支持重试"""
+    def wait_for_checkin_page_loaded(self, max_retries=3, wait_time=20):
+        """等待签到页面完全加载，支持重试（失败时尝试关闭并重开）"""
         for attempt in range(max_retries):
+            # 如果不是第一次尝试（即之前失败了），执行：关闭页面 -> 重新打开
+            if attempt > 0:
+                logger.info(f"第 {attempt + 1} 次尝试失败，正在尝试重置签到页面...")
+                
+                # 1. 尝试关闭当前弹窗/页面
+                try:
+                    close_btn_selector = [
+                        "//button[@title='关闭']"
+                    ]    
+                    close_btn = self.driver.find_element(By.XPATH, close_btn_selector)
+                    if close_btn.is_displayed():
+                        logger.info("找到关闭按钮，正在点击...")
+                        self.driver.execute_script("arguments[0].click();", close_btn)
+                        time.sleep(2)
+                except Exception as e:
+                    logger.info(f"尝试关闭页面时未找到关闭按钮或出错(可忽略): {e}")
+                
+                # 2. 重新加载签到页面
+                logger.info("重新跳转到签到URL...")
+                self.driver.get("https://checkin.leaflow.net")
+                time.sleep(5)  # 等待URL跳转加载
+
             logger.info(f"等待签到页面加载，尝试 {attempt + 1}/{max_retries}，等待 {wait_time} 秒...")
             time.sleep(wait_time)
             
@@ -283,8 +305,6 @@ class LeaflowAutoCheckin:
                     "button.checkin-btn",  # 优先使用这个选择器
                     "//button[contains(text(), '立即签到')]",
                     "//button[contains(text(), '已签到')]",
-                    "//button[contains(text(), '已完成')]",
-                    "button[class*='checkin']",
                     "//*[contains(text(), '每日签到')]",
                     "//*[contains(text(), '签到')]"
                 ]
@@ -306,7 +326,7 @@ class LeaflowAutoCheckin:
                     except:
                         continue
                 
-                logger.warning(f"第 {attempt + 1} 次尝试未找到签到按钮，继续等待...")
+                logger.warning(f"第 {attempt + 1} 次尝试未找到签到按钮")
                 
             except Exception as e:
                 logger.warning(f"第 {attempt + 1} 次检查签到页面时出错: {e}")
@@ -319,7 +339,7 @@ class LeaflowAutoCheckin:
         
         try:
             # 先等待页面可能的重载
-            time.sleep(8)
+            time.sleep(5)
             
             # 使用和单账号成功时相同的选择器
             checkin_selectors = [
@@ -376,7 +396,7 @@ class LeaflowAutoCheckin:
         self.driver.get("https://checkin.leaflow.net")
         
         # 等待签到页面加载（最多重试3次，每次等待20秒）
-        if not self.wait_for_checkin_page_loaded(max_retries=6, wait_time=20):
+        if not self.wait_for_checkin_page_loaded(max_retries=3, wait_time=20):
             raise Exception("签到页面加载失败，无法找到签到相关元素")
         
         # 查找并点击立即签到按钮
@@ -643,5 +663,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
