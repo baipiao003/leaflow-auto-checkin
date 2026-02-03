@@ -283,6 +283,8 @@ class LeaflowAutoCheckin:
                     "button.checkin-btn",  # 优先使用这个选择器
                     "//button[contains(text(), '立即签到')]",
                     "//button[contains(text(), '已签到')]",
+                    "//button[contains(text(), '已完成')]",
+                    "button[class*='checkin']",
                     "//*[contains(text(), '每日签到')]",
                     "//*[contains(text(), '签到')]"
                 ]
@@ -317,7 +319,7 @@ class LeaflowAutoCheckin:
         
         try:
             # 先等待页面可能的重载
-            time.sleep(5)
+            time.sleep(8)
             
             # 使用和单账号成功时相同的选择器
             checkin_selectors = [
@@ -641,4 +643,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
