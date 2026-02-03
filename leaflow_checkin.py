@@ -274,28 +274,35 @@ class LeaflowAutoCheckin:
     def wait_for_checkin_page_loaded(self, max_retries=3, wait_time=20):
         """等待签到页面完全加载，支持重试（失败时尝试关闭并重开）"""
         for attempt in range(max_retries):
-            # 如果不是第一次尝试（即之前失败了），执行：关闭页面 -> 重新打开
+            # 如果签到页面加载失败，执行：关闭页面 -> 重新打开
             if attempt > 0:
-                logger.info(f"第 {attempt + 1} 次尝试失败，正在尝试重置签到页面...")
+                logger.info(f"第 {attempt} 次尝试失败，正在尝试重置签到页面...")
+                # 1. 关闭签到弹窗或页面的元素选择器
+                close_btn_selectors = [
+                    "//button[@title='关闭']",
+                ]
                 
-                # 1. 尝试关闭当前弹窗/页面
-                try:
-                    close_btn_selector = [
-                        "//button[@title='关闭']"
-                    ]    
-                    close_btn = self.driver.find_element(By.XPATH, close_btn_selector)
-                    if close_btn.is_displayed():
-                        logger.info("找到关闭按钮，正在点击...")
-                        self.driver.execute_script("arguments[0].click();", close_btn)
-                        time.sleep(2)
-                except Exception as e:
-                    logger.info(f"尝试关闭页面时未找到关闭按钮或出错(可忽略): {e}")
+                for selector in close_btn_selectors:
+                    try:
+                        # 判断是 XPATH 还是 CSS
+                        by_type = By.XPATH if selector.startswith("//") else By.CSS_SELECTOR
+                        
+                        close_btn = self.driver.find_element(by_type, selector)
+                        if close_btn.is_displayed():
+                            logger.info(f"找到关闭按钮({selector})，正在点击...")
+                            self.driver.execute_script("arguments[0].click();", close_btn)
+                            time.sleep(3)
+                            # 找到了就跳出循环
+                            break
+                    except Exception:
+                        # 当前选择器没找到，尝试下一个
+                        continue
                 
                 # 2. 重新加载签到页面
                 logger.info("重新跳转到签到URL...")
                 self.driver.get("https://checkin.leaflow.net")
-                time.sleep(5)  # 等待URL跳转加载
-
+                time.sleep(5)
+            
             logger.info(f"等待签到页面加载，尝试 {attempt + 1}/{max_retries}，等待 {wait_time} 秒...")
             time.sleep(wait_time)
             
