@@ -157,7 +157,7 @@ class LeaflowAutoCheckin:
             password_input.clear()
             password_input.send_keys(self.password)
             logger.info("密码输入完成")
-            time.sleep(1)
+            time.sleep(2)
             
         except TimeoutException:
             raise Exception("找不到密码输入框")
@@ -244,6 +244,7 @@ class LeaflowAutoCheckin:
                 "//*[contains(@class, 'money')]",
                 "//*[contains(@class, 'amount')]",
                 "//button[contains(@class, 'dollar')]",
+                "//span[contains(@class, 'hidden')]",
                 "//span[contains(@class, 'font-medium')]"
             ]
             
@@ -280,22 +281,21 @@ class LeaflowAutoCheckin:
                 # 1. 关闭签到弹窗或页面的元素选择器
                 close_btn_selectors = [
                     "//button[@title='关闭']",
+                    "button:has(svg.lucide-xicon)",
+                    "//button[.//svg[contains(@class, 'lucide-xicon')]]"
                 ]
                 
                 for selector in close_btn_selectors:
                     try:
                         # 判断是 XPATH 还是 CSS
-                        by_type = By.XPATH if selector.startswith("//") else By.CSS_SELECTOR
-                        
+                        by_type = By.XPATH if selector.startswith("//") else By.CSS_SELECTOR                       
                         close_btn = self.driver.find_element(by_type, selector)
                         if close_btn.is_displayed():
                             logger.info(f"找到关闭按钮({selector})，正在点击...")
                             self.driver.execute_script("arguments[0].click();", close_btn)
-                            time.sleep(3)
-                            # 找到了就跳出循环
+                            time.sleep(2)
                             break
                     except Exception:
-                        # 当前选择器没找到，尝试下一个
                         continue
                 
                 # 2. 重新加载签到页面
@@ -312,6 +312,7 @@ class LeaflowAutoCheckin:
                     "button.checkin-btn",  # 优先使用这个选择器
                     "//button[contains(text(), '立即签到')]",
                     "//button[contains(text(), '已签到')]",
+                    "//button[contains(text(), '已完成')]",
                     "//*[contains(text(), '每日签到')]",
                     "//*[contains(text(), '签到')]"
                 ]
@@ -434,6 +435,7 @@ class LeaflowAutoCheckin:
                 ".message",
                 "[class*='success']",
                 "[class*='message']",
+                "//button[contains(text(), '已完成')]",
                 ".modal-content",  # 弹窗内容
                 ".ant-message",    # Ant Design 消息
                 ".el-message",     # Element UI 消息
@@ -466,7 +468,7 @@ class LeaflowAutoCheckin:
             # 检查签到按钮状态变化
             try:
                 checkin_btn = self.driver.find_element(By.CSS_SELECTOR, "button.checkin-btn")
-                if not checkin_btn.is_enabled() or "已签到" in checkin_btn.text or "disabled" in checkin_btn.get_attribute("class"):
+                if not checkin_btn.is_enabled() or "已完成" in checkin_btn.text or "disabled" in checkin_btn.get_attribute("class"):
                     return "今日已签到完成"
             except:
                 pass
