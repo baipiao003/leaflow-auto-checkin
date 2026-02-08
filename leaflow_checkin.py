@@ -274,12 +274,30 @@ class LeaflowAutoCheckin:
             return "未知"
     
     def wait_for_checkin_page_loaded(self, max_retries=3, wait_time=20):
-        """等待签到页面完全加载，支持重试（失败时尝试关闭并重开）"""
+        """等待签到页面完全加载，支持重试（自动处理 502 Bad Gateway）"""
         for attempt in range(max_retries):
-            # 如果签到页面加载失败，执行：关闭页面 -> 重新打开
+            # --- 新增：502 Bad Gateway 检测逻辑 ---
+            try:
+                # 检查页面标题或内容是否包含 502 错误
+                page_title = self.driver.title
+                page_source = self.driver.page_source
+                
+                if "502 Bad Gateway" in page_title or "<h1>502 Bad Gateway</h1>" in page_source:
+                    logger.warning(f"⚠️ 检测到 502 Bad Gateway (尝试 {attempt + 1}/{max_retries})")
+                    logger.info("正在尝试重新加载签到页面...")
+                    
+                    # 强制重新跳转到签到页面
+                    self.driver.get("https://checkin.leaflow.net")
+                    time.sleep(5) # 给页面一点刷新时间
+                    continue # 跳过本次循环后续检查，直接进入下一次尝试
+            except Exception as e:
+                # 忽略检查过程中的轻微错误（如页面刚刷新还没加载完DOM）
+                pass
+            
+            # 如果不是第一次尝试（即重试逻辑），执行关闭弹窗并刷新的操作
             if attempt > 0:
                 logger.info(f"第 {attempt} 次尝试失败，正在尝试重置签到页面...")
-                # 1. 关闭签到弹窗或页面的元素选择器
+                # 1. 关闭可能存在的遮挡层/弹窗
                 close_btn_selectors = [
                     "//button[@title='关闭']",
                     "button:has(svg.lucide-xicon)",
@@ -288,7 +306,6 @@ class LeaflowAutoCheckin:
                 
                 for selector in close_btn_selectors:
                     try:
-                        # 判断是 XPATH 还是 CSS
                         by_type = By.XPATH if selector.startswith("//") else By.CSS_SELECTOR                       
                         close_btn = self.driver.find_element(by_type, selector)
                         if close_btn.is_displayed():
@@ -305,9 +322,16 @@ class LeaflowAutoCheckin:
                 time.sleep(5)
             
             logger.info(f"等待签到页面加载，尝试 {attempt + 1}/{max_retries}，等待 {wait_time} 秒...")
-            time.sleep(wait_time)
+            
+            # 在等待元素之前，先睡一小会儿，避免页面刚刷新还未渲染
+            time.sleep(2)
             
             try:
+                # 再次检查 502 (防止在 sleep 期间页面变成了 502)
+                if "502 Bad Gateway" in self.driver.page_source:
+                    logger.warning("在等待期间页面变为 502，触发重试")
+                    continue
+
                 # 检查页面是否包含签到相关元素
                 checkin_indicators = [
                     "button.checkin-btn",  # 优先使用这个选择器
@@ -318,24 +342,30 @@ class LeaflowAutoCheckin:
                     "//*[contains(text(), '签到')]"
                 ]
                 
+                found_element = False
                 for indicator in checkin_indicators:
                     try:
                         if indicator.startswith("//"):
-                            element = WebDriverWait(self.driver, 10).until(
+                            element = WebDriverWait(self.driver, 5).until(
                                 EC.presence_of_element_located((By.XPATH, indicator))
                             )
                         else:
-                            element = WebDriverWait(self.driver, 10).until(
+                            element = WebDriverWait(self.driver, 5).until(
                                 EC.presence_of_element_located((By.CSS_SELECTOR, indicator))
                             )
                         
                         if element.is_displayed():
                             logger.info(f"找到签到页面元素")
+                            found_element = True
                             return True
                     except:
                         continue
                 
-                logger.warning(f"第 {attempt + 1} 次尝试未找到签到按钮")
+                if not found_element:
+                    logger.warning(f"第 {attempt + 1} 次尝试未找到签到按钮")
+                    
+                    # 如果没找到按钮，可能是网络慢，但也可能是 502，这里做一个长时间等待的兜底
+                    time.sleep(wait_time - 5) 
                 
             except Exception as e:
                 logger.warning(f"第 {attempt + 1} 次检查签到页面时出错: {e}")
@@ -673,3 +703,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
