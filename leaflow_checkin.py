@@ -306,7 +306,7 @@ class LeaflowAutoCheckin:
                 
                 for selector in close_btn_selectors:
                     try:
-                        by_type = By.XPATH if selector.startswith("//") else By.CSS_SELECTOR                       
+                        by_type = By.XPATH if selector.startswith("//") else By.CSS_SELECTOR
                         close_btn = self.driver.find_element(by_type, selector)
                         if close_btn.is_displayed():
                             logger.info(f"找到关闭按钮({selector})，正在点击...")
@@ -365,7 +365,7 @@ class LeaflowAutoCheckin:
                     logger.warning(f"第 {attempt + 1} 次尝试未找到签到按钮")
                     
                     # 如果没找到按钮，可能是网络慢，但也可能是 502，这里做一个长时间等待的兜底
-                    time.sleep(wait_time - 5) 
+                    time.sleep(wait_time - 5)
                 
             except Exception as e:
                 logger.warning(f"第 {attempt + 1} 次检查签到页面时出错: {e}")
@@ -703,4 +703,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
